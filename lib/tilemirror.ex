@@ -3,30 +3,52 @@ defmodule Tilemirror.Router do
 
   plug(:match)
   plug(:dispatch)
+  @supported_formats ~w(png webp)
 
-  get "/_tile/:z/:x/:y_fmt" do
-    case String.split(y_fmt, ".") do
-      [y, format] when format in ["png", "webp"] ->
-        case TileCache.get_tile(z, x, y, format) do
-          {:ok, tile_data} ->
-            conn
-            |> put_resp_header("cache-control", "max-age=31536000")
-            |> put_resp_content_type("image/#{format}")
-            |> send_resp(200, tile_data)
+  get("/_tile/:z/:x/:y_fmt") do
+    with {:ok, z_int} <- parse_int(z),
+         {:ok, x_int} <- parse_int(x),
+         {:ok, y_int, format} <- parse_tile_params(y_fmt),
+         true <- format in @supported_formats do
+      case TileCache.get_tile(z_int, x_int, y_int, format) do
+        {:ok, tile_data} ->
+          conn
+          |> put_resp_header("cache-control", "max-age=31536000")
+          |> put_resp_content_type("image/#{format}")
+          |> send_resp(200, tile_data)
 
-          {:error, reason} ->
-            conn
-            |> put_resp_content_type("text/plain")
-            |> send_resp(500, "Error: #{inspect(reason)}")
-        end
-
-      _ ->
-        send_resp(conn, 404, "not found")
+        {:error, reason} ->
+          conn
+          |> put_resp_content_type("text/plain")
+          |> send_resp(500, "Error: #{inspect(reason)}")
+      end
+    else
+      _ -> send_resp(conn, 404, "not found")
     end
   end
 
   get _ do
     send_resp(conn, 404, "not found")
+  end
+
+  defp parse_int(str) do
+    case Integer.parse(str) do
+      {int, ""} when int >= 0 -> {:ok, int}
+      _ -> {:error, :invalid_params}
+    end
+  end
+
+  defp parse_tile_params(y_fmt) do
+    case String.split(y_fmt, ".") do
+      [y, format] ->
+        case parse_int(y) do
+          {:ok, y_int} -> {:ok, y_int, format}
+          _ -> {:error, :invalid_params}
+        end
+
+      _ ->
+        {:error, :invalid_format}
+    end
   end
 end
 
