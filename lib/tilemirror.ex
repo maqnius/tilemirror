@@ -5,19 +5,23 @@ defmodule Tilemirror.Router do
   plug(:dispatch)
 
   get "/_tile/:z/:x/:y_fmt" do
-    [y, format] = String.split(y_fmt, ".")
+    case String.split(y_fmt, ".") do
+      [y, format] when format in ["png", "webp"] ->
+        case TileCache.get_tile(z, x, y, format) do
+          {:ok, tile_data} ->
+            conn
+            |> put_resp_header("cache-control", "max-age=31536000")
+            |> put_resp_content_type("image/#{format}")
+            |> send_resp(200, tile_data)
 
-    case TileCache.get_tile(z, x, y, format) do
-      {:ok, tile_data} ->
-        conn
-        |> put_resp_header("cache-control", "max-age=31536000")
-        |> put_resp_content_type("image/#{format}")
-        |> send_resp(200, tile_data)
+          {:error, reason} ->
+            conn
+            |> put_resp_content_type("text/plain")
+            |> send_resp(500, "Error: #{inspect(reason)}")
+        end
 
-      {:error, reason} ->
-        conn
-        |> put_resp_content_type("text/plain")
-        |> send_resp(500, "Error: #{inspect(reason)}")
+      _ ->
+        send_resp(conn, 404, "not found")
     end
   end
 
