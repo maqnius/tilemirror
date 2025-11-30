@@ -4,8 +4,6 @@ This elixir application mirrors the tiles served from a MapTile account using a 
 
 This helps to serve the tiles on your page from the origin server (no consent needed) while sparing the MapTile servers.
 
-The maps included in a webpage mostly load the same few tiles, so no need for a roundtrip around the globe.
-
 
 # Quickstart
 
@@ -16,7 +14,7 @@ The maps included in a webpage mostly load the same few tiles, so no need for a 
 $ just create_build_env 
 # build the application in the docker container
 $ just build
-# rsync the build assets to the tilemirror home folder and restarts the service
+# rsync the build assets to the tilemirror home folder and restarts the service (will fail at this point since there is no service)
 $ just deploy <ssh-user> <ssh-host>
 ```
 
@@ -45,4 +43,4 @@ $ supervisorctl update
 $ uberspace web backend set <host>/tiles --http --port 4000
 ```
 
-Your tiles should now be served from `/_tile/10/532/340.webp` or `/_tile/10/532/340.png`.
+Your tiles should now be served  as `/_tile/{z}/{x}/{y}.webp`.
