@@ -1,0 +1,83 @@
+defmodule Tilemirror.Router do
+  use Plug.Router
+
+  plug(:match)
+  plug(:dispatch)
+
+  get "/_tile/:z/:x/:y_fmt" do
+    [y, format] = String.split(y_fmt, ".")
+
+    case TileCache.get_tile(z, x, y, format) do
+      {:ok, tile_data} ->
+        conn
+        |> put_resp_header("cache-control", "max-age=31536000")
+        |> put_resp_content_type("image/#{format}")
+        |> send_resp(200, tile_data)
+
+      {:error, reason} ->
+        conn
+        |> put_resp_content_type("text/plain")
+        |> send_resp(500, "Error: #{inspect(reason)}")
+    end
+  end
+
+  get _ do
+    send_resp(conn, 404, "not found")
+  end
+end
+
+defmodule TileCache do
+  @moduledoc """
+  A simple file system cache for map tiles from OpenStreetMap.
+  """
+
+  @cache_dir "tile_cache"
+  @upstream_url "https://api.maptiler.com/maps/openstreetmap"
+
+  @doc """
+  Gets a tile, either from cache or by fetching from upstream.
+  Returns {:ok, binary} or {:error, reason}
+  """
+  def get_tile(z, x, y, format) do
+    cache_path = tile_path(z, x, y, format)
+
+    case File.read(cache_path) do
+      {:ok, data} ->
+        {:ok, data}
+
+      {:error, :enoent} ->
+        fetch_and_cache_tile(z, x, y, format, cache_path)
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp fetch_and_cache_tile(z, x, y, format, cache_path) do
+    url = "#{@upstream_url}/#{z}/#{x}/#{y}.#{format}?key=#{System.get_env("MAP_TILER_API_KEY")}"
+
+    case :httpc.request(:get, {String.to_charlist(url), []}, [], body_format: :binary) do
+      {:ok, {{_, 200, _}, _headers, body}} ->
+        cache_path |> Path.dirname() |> File.mkdir_p!()
+        File.write!(cache_path, body)
+        {:ok, body}
+
+      {:ok, {{_, status, _}, _headers, _body}} ->
+        {:error, "HTTP #{status}"}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp tile_path(z, x, y, format) do
+    Path.join([@cache_dir, "#{z}", "#{x}", "#{y}.#{format}"])
+  end
+
+  @doc """
+  Clears the entire tile cache.
+  """
+  def clear_cache do
+    File.rm_rf(@cache_dir)
+  end
+end
