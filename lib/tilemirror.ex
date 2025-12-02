@@ -1,5 +1,6 @@
 defmodule Tilemirror.Router do
   use Plug.Router
+  require Logger
 
   plug(:match)
   plug(:dispatch)
@@ -18,6 +19,8 @@ defmodule Tilemirror.Router do
           |> send_resp(200, tile_data)
 
         {:error, reason} ->
+          Logger.error(reason)
+
           conn
           |> put_resp_content_type("text/plain")
           |> send_resp(500, "Error: #{inspect(reason)}")
