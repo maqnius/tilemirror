@@ -60,6 +60,8 @@ defmodule TileCache do
   @cache_dir "tile_cache"
   @upstream_url "https://api.maptiler.com/maps/openstreetmap"
 
+  defp api_key(), do: Application.fetch_env!(:tilemirror, :api_key)
+
   @doc """
   Gets a tile, either from cache or by fetching from upstream.
   Returns {:ok, binary} or {:error, reason}
@@ -80,7 +82,7 @@ defmodule TileCache do
   end
 
   defp fetch_and_cache_tile(z, x, y, format, cache_path) do
-    url = "#{@upstream_url}/#{z}/#{x}/#{y}.#{format}?key=#{System.get_env("MAP_TILER_API_KEY")}"
+    url = "#{@upstream_url}/#{z}/#{x}/#{y}.#{format}?key=#{api_key()}"
 
     case :httpc.request(:get, {String.to_charlist(url), []}, [], body_format: :binary) do
       {:ok, {{_, 200, _}, _headers, body}} ->
