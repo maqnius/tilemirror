@@ -1,7 +1,28 @@
+defmodule Tilemirror.FilterHostPlug do
+  import Plug.Conn
+  @behaviour Plug
+
+  def init(%{allowed_hosts: allowed_hosts} = options) do
+    %{options | allowed_hosts: MapSet.new(allowed_hosts)}
+  end
+
+  def call(
+        conn,
+        %{allowed_hosts: allowed_hosts}
+      ) do
+    if MapSet.member?(allowed_hosts, conn.host) do
+      conn
+    else
+      send_resp(conn, 401, "Wrong host #{conn.host}") |> halt()
+    end
+  end
+end
+
 defmodule Tilemirror.Router do
   use Plug.Router
   require Logger
 
+  plug(Tilemirror.FilterHostPlug, %{allowed_hosts: ["127.0.0.1", "hevenerfeld.de"]})
   plug(:match)
   plug(:dispatch)
   @supported_formats ~w(png webp)
