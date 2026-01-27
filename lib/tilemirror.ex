@@ -39,6 +39,11 @@ defmodule Tilemirror.Router do
           |> put_resp_content_type("image/#{format}")
           |> send_resp(200, tile_data)
 
+        {:error, :out_of_bounds} ->
+          conn
+          |> put_resp_content_type("text/plain")
+          |> send_resp(400, "Error: Out ouf allowed bounds")
+
         {:error, reason} ->
           Logger.error(reason)
 
@@ -76,6 +81,48 @@ defmodule Tilemirror.Router do
   end
 end
 
+defmodule BBoxCalc do
+  def ranges(bbox, min_zoom, max_zoom) do
+    min_zoom..max_zoom
+    |> Enum.map(fn z -> {z, ranges_for_zoom(bbox, z)} end)
+    |> Map.new()
+  end
+
+  defp ranges_for_zoom(bbox, z) do
+    {min_x, min_y} = latlon_to_tile(bbox.max_lat, bbox.min_lon, z)
+    {max_x, max_y} = latlon_to_tile(bbox.min_lat, bbox.max_lon, z)
+
+    %{
+      x: min_x..max_x,
+      y: min_y..max_y
+    }
+  end
+
+  defp latlon_to_tile(lat, lon, z) do
+    n = :math.pow(2, z)
+
+    x =
+      ((lon + 180.0) / 360.0 * n)
+      |> floor()
+      |> clamp(0, trunc(n - 1))
+
+    lat_rad = deg2rad(lat)
+
+    y =
+      ((1.0 - :math.log(:math.tan(lat_rad) + 1.0 / :math.cos(lat_rad)) / :math.pi()) / 2.0 * n)
+      |> floor()
+      |> clamp(0, trunc(n - 1))
+
+    {x, y}
+  end
+
+  defp deg2rad(deg), do: deg * :math.pi() / 180.0
+
+  defp clamp(v, min, _max) when v < min, do: min
+  defp clamp(v, _min, max) when v > max, do: max
+  defp clamp(v, _min, _max), do: v
+end
+
 defmodule TileCache do
   @moduledoc """
   A simple file system cache for map tiles from OpenStreetMap.
@@ -84,6 +131,20 @@ defmodule TileCache do
   @cache_dir "tile_cache"
   @upstream_url "https://api.maptiler.com/maps/openstreetmap"
 
+  # https://norbertrenner.de/osm/bbox.html
+  # restrict served tiles to bounding box
+  @bbox %{
+    min_lat: 51.055,
+    max_lat: 51.943,
+    min_lon: 6.205,
+    max_lon: 8.012
+  }
+
+  @min_zoom 0
+  @max_zoom 18
+
+  @allowed_tiles BBoxCalc.ranges(@bbox, @min_zoom, @max_zoom)
+
   defp api_key(), do: Application.fetch_env!(:tilemirror, :api_key)
 
   @doc """
@@ -91,17 +152,28 @@ defmodule TileCache do
   Returns {:ok, binary} or {:error, reason}
   """
   def get_tile(z, x, y, format) do
-    cache_path = tile_path(z, x, y, format)
+    if allowed?(z, x, y) do
+      cache_path = tile_path(z, x, y, format)
 
-    case File.read(cache_path) do
-      {:ok, data} ->
-        {:ok, data}
+      case File.read(cache_path) do
+        {:ok, data} ->
+          {:ok, data}
 
-      {:error, :enoent} ->
-        fetch_and_cache_tile(z, x, y, format, cache_path)
+        {:error, :enoent} ->
+          fetch_and_cache_tile(z, x, y, format, cache_path)
 
-      {:error, reason} ->
-        {:error, reason}
+        {:error, reason} ->
+          {:error, reason}
+      end
+    else
+      {:error, :out_of_bounds}
+    end
+  end
+
+  defp allowed?(z, x, y) do
+    case @allowed_tiles[z] do
+      %{x: xr, y: yr} -> x in xr and y in yr
+      nil -> false
     end
   end
 
